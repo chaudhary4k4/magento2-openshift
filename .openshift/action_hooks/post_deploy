@@ -1,0 +1,18 @@
+#!/bin/bash
+# Hacky way to free up some space
+rm -fr $OPENSHIFT_DEPLOYMENTS_DIR/*/repo/
+# Fix permissions
+cd $OPENSHIFT_REPO_DIR/public && find . -type d -exec chmod 770 {} \; && find . -type f -exec chmod 660 {} \; && chmod u+x bin/magento
+chmod -R 777 $OPENSHIFT_REPO_DIR/public/var $OPENSHIFT_REPO_DIR/public/pub
+#ln -sf $OPENSHIFT_DATA_DIR/vendor $OPENSHIFT_REPO_DIR/public/vendor
+# Composer install in magento root folder (symlinking doesnt work for some reason...)
+cd $OPENSHIFT_REPO_DIR/public && composer config http-basic.repo.magento.com $API_KEY $API_SECRET && composer install --no-dev
+# Copy etc settings
+cp  $OPENSHIFT_REPO_DIR/*.php $OPENSHIFT_REPO_DIR/public/app/etc/
+# Import sample DB data
+zcat $OPENSHIFT_REPO_DIR/*.sql.gz | mysql $OPENSHIFT_GEAR_NAME -h $OPENSHIFT_MYSQL_DB_HOST -u $OPENSHIFT_MYSQL_DB_USERNAME -p"$OPENSHIFT_MYSQL_DB_PASSWORD"
+# Deploy statics
+php $OPENSHIFT_REPO_DIR/public/bin/magento setup:static-content:deploy
+ln -s en_US $OPENSHIFT_REPO_DIR/public/pub/static/adminhtml/Magento/backend/en_GB
+# Clean cache
+php $OPENSHIFT_REPO_DIR/public/bin/magento cache:clean

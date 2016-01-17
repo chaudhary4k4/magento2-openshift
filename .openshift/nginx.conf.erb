@@ -1,0 +1,143 @@
+#
+# Enable Gzip
+gzip  on;
+gzip_http_version 1.0;
+gzip_comp_level 2;
+gzip_min_length 1100;
+gzip_buffers     4 8k;
+gzip_proxied any;
+gzip_types
+  # text/html is always compressed by HttpGzipModule
+  text/css
+  text/javascript
+  text/xml
+  text/plain
+  text/x-component
+  application/javascript
+  application/json
+  application/xml
+  application/rss+xml
+  font/truetype
+  font/opentype
+  application/vnd.ms-fontobject
+  image/svg+xml;
+
+gzip_static on;
+gzip_proxied        expired no-cache no-store private auth;
+gzip_disable        "MSIE [1-6]\.";
+gzip_vary           on;
+
+server {
+    set $MAGE_MODE default; # or production or developer
+    set $MAGE_ROOT <%= ENV['OPENSHIFT_REPO_DIR'] %>/public;
+
+    listen  <%= ENV['OPENSHIFT_NGINX_IP'] %>:<%= ENV['OPENSHIFT_NGINX_PORT'] %>;
+    root    <%= ENV['OPENSHIFT_REPO_DIR'] %>/public;
+    index index.php;
+    autoindex off;
+    charset off;
+    server_name demo-mage2.rhcloud.com;
+
+
+    location /setup {
+        root    <%= ENV['OPENSHIFT_REPO_DIR'] %>/public;
+        location ~ ^/setup/index.php {
+            fastcgi_pass unix:<%= ENV['OPENSHIFT_PHP_SOCKET'] %>;
+            fastcgi_index  index.php;
+            fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+            include <%= ENV['OPENSHIFT_NGINX_DIR'] %>/usr/nginx-<%= ENV['OPENSHIFT_NGINX_VERSION'] %>/conf/fastcgi_params;
+        }
+
+        location ~ ^/setup/(?!pub/). {
+            deny all;
+        }
+
+        location ~ ^/setup/pub/ {
+            add_header X-Frame-Options "SAMEORIGIN";
+        }
+    }
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+    location /pub {
+        location ~ ^/pub/media/(downloadable|customer|import|theme_customization/.*\.xml) {
+            deny all;
+        }
+        alias $MAGE_ROOT/pub;
+        add_header X-Frame-Options "SAMEORIGIN";
+    }
+
+    location /static/ {
+        if ($MAGE_MODE = "production") {
+            expires max;
+        }
+        location ~* \.(ico|jpg|jpeg|png|gif|svg|js|css|swf|eot|ttf|otf|woff|woff2)$ {
+            add_header Cache-Control "public";
+            add_header X-Frame-Options "SAMEORIGIN";
+            expires +1y;
+
+            if (!-f $request_filename) {
+                rewrite ^/static/(version\d*/)?(.*)$ /static.php?resource=$2 last;
+            }
+        }
+        location ~* \.(zip|gz|gzip|bz2|csv|xml)$ {
+            add_header Cache-Control "no-store";
+            add_header X-Frame-Options "SAMEORIGIN";
+            expires    off;
+
+            if (!-f $request_filename) {
+               rewrite ^/static/(version\d*/)?(.*)$ /static.php?resource=$2 last;
+            }
+        }
+        if (!-f $request_filename) {
+            rewrite ^/static/(version\d*/)?(.*)$ /static.php?resource=$2 last;
+        }
+        add_header X-Frame-Options "SAMEORIGIN";
+    }
+
+    location /media/ {
+        try_files $uri $uri/ /get.php?$args;
+
+        location ~ ^/media/theme_customization/.*\.xml {
+            deny all;
+        }
+
+        location ~* \.(ico|jpg|jpeg|png|gif|svg|js|css|swf|eot|ttf|otf|woff|woff2)$ {
+            add_header Cache-Control "public";
+            add_header X-Frame-Options "SAMEORIGIN";
+            expires +1y;
+            try_files $uri $uri/ /get.php?$args;
+        }
+        location ~* \.(zip|gz|gzip|bz2|csv|xml)$ {
+            add_header Cache-Control "no-store";
+            add_header X-Frame-Options "SAMEORIGIN";
+            expires    off;
+            try_files $uri $uri/ /get.php?$args;
+        }
+        add_header X-Frame-Options "SAMEORIGIN";
+    }
+
+    location /media/customer/ {
+        deny all;
+    }
+
+    location /media/downloadable/ {
+        deny all;
+    }
+
+    location /media/import/ {
+        deny all;
+    }
+
+    location ~ cron\.php {
+        deny all;
+    }
+
+    # pass the PHP scripts to PHP-FPM
+    location ~ \.php$ {
+        fastcgi_pass unix:<%= ENV['OPENSHIFT_PHP_SOCKET'] %>;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_script_name;
+        include <%= ENV['OPENSHIFT_NGINX_DIR'] %>/usr/nginx-<%= ENV['OPENSHIFT_NGINX_VERSION'] %>/conf/fastcgi_params;
+    }
+}
